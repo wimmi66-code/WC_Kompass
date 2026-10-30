@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>WC-Kompass</title>
+<meta name="description" content="Öffentliche Toiletten in Deutschland auf der Karte finden und nach Sauberkeit, Zugänglichkeit und Ausstattung bewerten.">
+<meta name="theme-color" content="#1D5C9E">
+<meta name="color-scheme" content="light dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WC-Kompass">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,700;62..125,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: Vollbild-Karte wie ein Stadtplan, oben eine schmale Leiste wie ein Hinweisschild, unten ein ausziehbares Blatt für Details und Bewertung */
+:root{
+  --bg:#F2F5F8; --paper:#FFFFFF; --ink:#16222E; --muted:#5A6977; --line:#D6DEE6;
+  --accent:#1D5C9E; --accent-ink:#FFFFFF; --accent-soft:#E1ECF8;
+  --good:#1E8A52; --mid:#D99A1E; --bad:#C8432F; --none:#7D8B99; --star:#F0B429;
+  --display:"Archivo",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --r:12px; --barh:58px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F161D; --paper:#18222C; --ink:#E4ECF2; --muted:#93A3B2; --line:#2B3846;
+  --accent:#6FA8E8; --accent-ink:#0A1A2C; --accent-soft:#1B2E44; --good:#4CC385; --mid:#E8B54A; --bad:#EE6B57; --none:#8696A6; --star:#F0B429; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F161D; --paper:#18222C; --ink:#E4ECF2; --muted:#93A3B2; --line:#2B3846;
+  --accent:#6FA8E8; --accent-ink:#0A1A2C; --accent-soft:#1B2E44; --good:#4CC385; --mid:#E8B54A; --bad:#EE6B57; --none:#8696A6; --star:#F0B429; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;overflow:hidden}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+.bar{position:fixed;left:0;right:0;top:0;z-index:1000;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 8px;background:var(--paper);border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+.brand{display:flex;align-items:center;gap:8px;flex:none}
+.brand .sign{width:34px;height:34px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:14px;letter-spacing:.02em}
+.brand h1{font-family:var(--display);font-stretch:80%;font-weight:800;font-size:20px;margin:0;line-height:1}
+@media (max-width:560px){.brand h1{display:none}}
+.search{flex:1;min-width:0;position:relative}
+.search input{width:100%;border:1.5px solid var(--line);background:var(--bg);border-radius:9px;padding:8px 12px;font-size:15px}
+.results{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--paper);border:1.5px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:0 8px 24px rgb(0 0 0 / .15)}
+.results button{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);padding:9px 12px;cursor:pointer;font-size:14px}
+.results button:last-child{border-bottom:none}
+.results button:hover{background:var(--accent-soft)}
+.ibtn{flex:none;height:38px;min-width:38px;padding:0 10px;border-radius:9px;border:1.5px solid var(--line);background:var(--paper);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:600;font-size:14px}
+.ibtn.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.ibtn svg{width:18px;height:18px}
+.ibtn .lbl{display:inline}
+@media (max-width:720px){.ibtn .lbl{display:none}}
+
+#map{position:fixed;left:0;right:0;bottom:0;top:calc(var(--barh) + env(safe-area-inset-top,0px));z-index:1;background:var(--bg)}
+.leaflet-container{font-family:var(--body)}
+:root[data-theme="dark"] .leaflet-tile-pane{filter:brightness(.8) contrast(1.05) saturate(.8)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .leaflet-tile-pane{filter:brightness(.8) contrast(1.05) saturate(.8)}}
+
+.status{position:fixed;z-index:900;left:50%;transform:translateX(-50%);top:calc(var(--barh) + env(safe-area-inset-top,0px) + 10px);background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;box-shadow:0 4px 14px rgb(0 0 0 / .12);max-width:calc(100% - 32px);text-align:center}
+.legend{position:fixed;z-index:900;left:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 28px);background:var(--paper);border:1.5px solid var(--line);border-radius:10px;padding:7px 10px;font-size:12px;display:grid;gap:3px}
+.legend span{display:flex;align-items:center;gap:6px}
+.dot{width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgb(0 0 0 / .25);display:inline-block;flex:none}
+.mode-banner{position:fixed;z-index:950;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 24px);background:var(--ink);color:var(--paper);border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 24px);font-size:14px}
+.mode-banner .btn{padding:7px 12px;font-size:14px}
+.crosshair{position:fixed;z-index:940;left:50%;top:calc(50% + var(--barh)/2);width:34px;height:34px;transform:translate(-50%,-50%);pointer-events:none}
+.crosshair::before,.crosshair::after{content:"";position:absolute;background:var(--accent)}
+.crosshair::before{left:50%;top:0;bottom:0;width:3px;transform:translateX(-50%)}
+.crosshair::after{top:50%;left:0;right:0;height:3px;transform:translateY(-50%)}
+
+.sheet{position:fixed;z-index:1100;left:0;right:0;bottom:0;max-height:78vh;background:var(--paper);border-top-left-radius:18px;border-top-right-radius:18px;box-shadow:0 -10px 30px rgb(0 0 0 / .18);display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (min-width:900px){.sheet{left:auto;right:16px;top:calc(var(--barh) + env(safe-area-inset-top,0px) + 16px);bottom:16px;width:420px;max-height:none;border-radius:16px}}
+.sheet-head{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+.sheet-head h2{font-family:var(--display);font-stretch:85%;font-size:21px;margin:0;line-height:1.15;text-wrap:balance}
+.sheet-head .sub{font-size:13px;color:var(--muted);margin-top:2px}
+.close{margin-left:auto;flex:none;width:34px;height:34px;border-radius:50%;border:1.5px solid var(--line);background:var(--bg);cursor:pointer;font-size:18px;line-height:1}
+.sheet-body{overflow:auto;padding:14px 16px 20px;display:grid;gap:16px;min-height:0}
+.facts{display:flex;flex-wrap:wrap;gap:6px}
+.fact{font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:3px 9px;background:var(--bg)}
+.fact.y{border-color:color-mix(in srgb,var(--good) 50%,transparent);background:color-mix(in srgb,var(--good) 12%,transparent)}
+.fact.n{border-color:color-mix(in srgb,var(--bad) 45%,transparent);background:color-mix(in srgb,var(--bad) 10%,transparent)}
+.scores{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.score{border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;text-align:center}
+.score .v{font-family:var(--display);font-weight:800;font-size:26px;line-height:1;font-variant-numeric:tabular-nums}
+.score .k{font-size:12px;color:var(--muted);margin-top:3px}
+.h3{font-family:var(--display);font-stretch:90%;font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 6px}
+.review{border-top:1px solid var(--line);padding-top:9px;font-size:14px}
+.review:first-child{border-top:none;padding-top:0}
+.review .meta{font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+.review p{margin:4px 0 0;overflow-wrap:anywhere}
+.stars-s{color:var(--star);letter-spacing:1px;font-size:13px}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.btn{border-radius:9px;padding:9px 14px;border:1.5px solid var(--ink);background:var(--paper);cursor:pointer;font-weight:600;font-size:14.5px;text-decoration:none;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.ghost{border-color:var(--line)}
+.rate-row{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px}
+@media (max-width:380px){.rate-row{grid-template-columns:1fr}}
+.rate-row label{font-weight:600;font-size:14px}
+.stars{display:flex;gap:2px}
+.stars button{width:40px;height:40px;border:none;background:none;cursor:pointer;font-size:28px;line-height:1;color:var(--line);padding:0}
+.stars button.on{color:var(--star)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px}
+.checks label{display:flex;gap:8px;align-items:flex-start;font-size:14px;cursor:pointer}
+.checks input{margin-top:3px;accent-color:var(--accent);width:16px;height:16px}
+textarea,.inp{width:100%;border:1.5px solid var(--line);background:var(--bg);border-radius:9px;padding:9px 11px;font-size:15px}
+textarea{min-height:72px;resize:vertical}
+.hint{font-size:12.5px;color:var(--muted);margin:4px 0 0}
+.err{color:var(--bad);font-weight:600;font-size:14px}
+.ok{color:var(--good);font-weight:600;font-size:14px}
+.filter-grid{display:grid;gap:10px}
+.seg{display:flex;border:1.5px solid var(--line);border-radius:9px;overflow:hidden;width:max-content;max-width:100%}
+.seg button{border:none;border-right:1.5px solid var(--line);background:var(--paper);padding:8px 12px;cursor:pointer;font-weight:600;font-size:14px}
+.seg button:last-child{border-right:none}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.small{font-size:12.5px;color:var(--muted)}
+.leaflet-control-attribution{font-size:10.5px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="bar" id="bar">
+  <div class="brand"><div class="sign" aria-hidden="true">WC</div><h1>WC-Kompass</h1></div>
+  <div class="search">
+    <input id="q" type="search" placeholder="Ort oder Adresse suchen" aria-label="Ort oder Adresse suchen" autocomplete="off">
+    <div class="results" id="results" hidden></div>
+  </div>
+  <button class="ibtn" id="btnLocate" type="button" title="Mein Standort" aria-label="Mein Standort">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span class="lbl">Standort</span></button>
+  <button class="ibtn" id="btnFilter" type="button" title="Filter" aria-label="Filter">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg><span class="lbl">Filter</span></button>
+  <button class="ibtn" id="btnAdd" type="button" title="Toilette melden" aria-label="Toilette melden">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Melden</span></button>
+  <button class="ibtn" id="btnInfo" type="button" title="Info" aria-label="Info">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
+</header>
+
+<div id="map" role="application" aria-label="Karte mit öffentlichen Toiletten"></div>
+<div class="status" id="status" hidden></div>
+<div class="legend" aria-label="Legende">
+  <span><i class="dot" style="background:var(--good)"></i>gut (ab 4)</span>
+  <span><i class="dot" style="background:var(--mid)"></i>mittel (3–3,9)</span>
+  <span><i class="dot" style="background:var(--bad)"></i>schlecht (unter 3)</span>
+  <span><i class="dot" style="background:var(--none)"></i>noch nicht bewertet</span>
+</div>
+<div class="crosshair" id="cross" hidden></div>
+<div class="mode-banner" id="addBanner" hidden>
+  <span>Karte so verschieben, dass das Kreuz auf der Toilette liegt.</span>
+  <button class="btn primary" id="addHere" type="button">Hier eintragen</button>
+  <button class="btn" id="addCancel" type="button" style="background:transparent;color:inherit;border-color:currentColor">Abbrechen</button>
+</div>
+
+<section class="sheet" id="sheet" hidden aria-live="polite">
+  <div class="sheet-head">
+    <div style="min-width:0"><h2 id="sTitle"></h2><div class="sub" id="sSub"></div></div>
+    <button class="close" id="sClose" type="button" aria-label="Schließen">×</button>
+  </div>
+  <div class="sheet-body" id="sBody"></div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="config.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const CFG = window.WC_KOMPASS_CONFIG || {};
+const SB_URL = (CFG.supabaseUrl||'').replace(/\/+$/,''), SB_KEY = CFG.supabaseKey||'';
+const SHARED = !!(SB_URL && SB_KEY);
+
+const MERKMALE = [
+  ['kostenlos','kostenlos'],['kostenpflichtig','kostenpflichtig'],['rollstuhl','rollstuhlgerecht'],['eurokey','Euroschlüssel nötig'],
+  ['wickeltisch','Wickeltisch'],['seife','Seife vorhanden'],['papier','Papier / Trockner vorhanden'],['unisex','Unisex'],
+  ['24h','rund um die Uhr offen'],['gaeste','nur für Gäste / Kunden'],['geschlossen','geschlossen oder defekt vorgefunden']
+];
+const MK = Object.fromEntries(MERKMALE);
+
+/* ---------- Speicher: Supabase oder lokal ---------- */
+const local = {
+  get(k,d){ try{ return JSON.parse(localStorage.getItem(k)) ?? d; }catch(e){ return d; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+function sbHeaders(extra){
+  const h = Object.assign({'apikey':SB_KEY,'Content-Type':'application/json'}, extra||{});
+  if(SB_KEY.startsWith('eyJ')) h['Authorization'] = 'Bearer ' + SB_KEY;
+  return h;
+}
+async function sbGet(path){
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {headers:sbHeaders()});
+  if(!r.ok) throw new Error('Datenbank antwortet nicht ('+r.status+')');
+  return r.json();
+}
+async function sbPost(table, body){
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {method:'POST', headers:sbHeaders({'Prefer':'return=representation'}), body:JSON.stringify(body)});
+  if(!r.ok){ const t = await r.text().catch(()=>''); throw new Error('Speichern fehlgeschlagen ('+r.status+') '+t.slice(0,120)); }
+  return r.json();
+}
+const store = {
+  async loadAll(){
+    if(SHARED){
+      const [places, ratings] = await Promise.all([
+        sbGet('places?select=id,name,lat,lon,created_at&limit=5000'),
+        sbGet('ratings?select=place_id,sauberkeit,zugang,gesamt,merkmale&limit=20000')
+      ]);
+      return {places, ratings};
+    }
+    return {places: local.get('wc-places',[]), ratings: local.get('wc-ratings',[])};
+  },
+  async reviews(placeId){
+    if(SHARED) return sbGet(`ratings?select=*&place_id=eq.${encodeURIComponent(placeId)}&order=created_at.desc&limit=30`);
+    return local.get('wc-ratings',[]).filter(r=>r.place_id===placeId).sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,30);
+  },
+  async addRating(r){
+    if(SHARED){ const [row] = await sbPost('ratings', r); return row; }
+    const row = Object.assign({id:'l'+Date.now(), created_at:new Date().toISOString()}, r);
+    const all = local.get('wc-ratings',[]); all.push(row); local.set('wc-ratings',all); return row;
+  },
+  async addPlace(p){
+    if(SHARED){ const [row] = await sbPost('places', p); return row; }
+    const row = Object.assign({created_at:new Date().toISOString()}, p);
+    const all = local.get('wc-places',[]); all.push(row); local.set('wc-places',all); return row;
+  }
+};
+
+/* ---------- Daten im Speicher ---------- */
+const places = new Map();      // id -> {id, lat, lon, tags, src:'osm'|'user', name}
+const agg = new Map();         // place_id -> {n, s, z, g, mk:{}}
+function addAgg(r){
+  const a = agg.get(r.place_id) || {n:0,s:0,z:0,g:0,mk:{}};
+  a.n++; a.s+=r.sauberkeit; a.z+=r.zugang; a.g+=r.gesamt;
+  (r.merkmale||[]).forEach(m=>{ a.mk[m]=(a.mk[m]||0)+1; });
+  agg.set(r.place_id, a);
+}
+const fmt1 = v => v==null ? '–' : v.toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1});
+
+/* ---------- Karte ---------- */
+const startView = local.get('wc-view', {lat:51.6806, lon:7.8160, z:14});
+const map = L.map('map', {zoomControl:false, worldCopyJump:false, maxBounds:[[45,2],[57,19]], minZoom:5}).setView([startView.lat,startView.lon], startView.z);
+L.control.zoom({position:'bottomright'}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende'}).addTo(map);
+const layer = L.layerGroup().addTo(map);
+const markers = new Map();
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function colorFor(id){
+  const a = agg.get(id);
+  if(!a) return css('--none');
+  const v = a.g/a.n; return v>=4 ? css('--good') : v>=3 ? css('--mid') : css('--bad');
+}
+
+/* Filter */
+let filter = local.get('wc-filter', {min:0, rated:false, rolli:false, free:false, wickel:false});
+function passes(p){
+  const a = agg.get(p.id), t = p.tags||{};
+  if(filter.rated && !a) return false;
+  if(filter.min && (!a || a.g/a.n < filter.min)) return false;
+  const has = m => a && a.mk[m] && a.mk[m] >= Math.ceil(a.n/2);
+  if(filter.rolli && !(t.wheelchair==='yes' || has('rollstuhl'))) return false;
+  if(filter.free && !(t.fee==='no' || has('kostenlos'))) return false;
+  if(filter.wickel && !(t.changing_table==='yes' || has('wickeltisch'))) return false;
+  return true;
+}
+function render(){
+  let shown = 0;
+  places.forEach(p=>{
+    let m = markers.get(p.id);
+    const ok = passes(p);
+    if(!ok){ if(m){ layer.removeLayer(m); markers.delete(p.id);} return; }
+    shown++;
+    const col = colorFor(p.id);
+    if(!m){
+      m = L.circleMarker([p.lat,p.lon], {radius:9, weight:2.5, color:'#ffffff', fillColor:col, fillOpacity:1});
+      m.on('click', ()=>openPlace(p.id));
+      m.bindTooltip(esc(p.name || (p.tags&&p.tags.name) || 'Toilette'), {direction:'top', offset:[0,-8]});
+      markers.set(p.id, m); layer.addLayer(m);
+    } else m.setStyle({fillColor:col});
+  });
+  return shown;
+}
+
+/* OpenStreetMap-Toiletten über Overpass laden */
+const loadedTiles = new Set();
+let loading = 0;
+function tileKeys(b){
+  const s=0.05, keys=[];
+  for(let la=Math.floor(b.getSouth()/s); la<=Math.floor(b.getNorth()/s); la++)
+    for(let lo=Math.floor(b.getWest()/s); lo<=Math.floor(b.getEast()/s); lo++) keys.push(la+':'+lo);
+  return {keys, s};
+}
+async function loadOsm(){
+  if(map.getZoom() < 13){ setStatus('Hineinzoomen, um Toiletten zu laden'); return; }
+  const b = map.getBounds(); const {keys,s} = tileKeys(b);
+  const missing = keys.filter(k=>!loadedTiles.has(k));
+  if(!missing.length){ setStatus(null); return; }
+  let la1=Infinity,la2=-Infinity,lo1=Infinity,lo2=-Infinity;
+  missing.forEach(k=>{ const [la,lo]=k.split(':').map(Number); la1=Math.min(la1,la*s); la2=Math.max(la2,(la+1)*s); lo1=Math.min(lo1,lo*s); lo2=Math.max(lo2,(lo+1)*s); });
+  const q = `[out:json][timeout:25];(node["amenity"="toilets"](${la1},${lo1},${la2},${lo2});way["amenity"="toilets"](${la1},${lo1},${la2},${lo2}););out center tags;`;
+  loading++; setStatus('Toiletten werden geladen …');
+  try{
+    const r = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data='+encodeURIComponent(q), headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    j.elements.forEach(e=>{
+      const lat = e.lat ?? (e.center&&e.center.lat), lon = e.lon ?? (e.center&&e.center.lon);
+      if(lat==null) return;
+      const id = `osm-${e.type[0]}${e.id}`;
+      if(!places.has(id)) places.set(id, {id, lat, lon, tags:e.tags||{}, src:'osm'});
+    });
+    missing.forEach(k=>loadedTiles.add(k));
+    loading--; const n = render(); setStatus(n ? null : 'Hier sind keine Toiletten eingetragen. Du kannst eine melden.', 4000);
+  }catch(e){
+    loading--; setStatus('Kartendaten gerade nicht erreichbar. Bitte gleich noch einmal verschieben.', 5000);
+  }
+}
+let t=null;
+map.on('moveend', ()=>{ clearTimeout(t); t=setTimeout(loadOsm, 450); const c=map.getCenter(); local.set('wc-view',{lat:c.lat,lon:c.lng,z:map.getZoom()}); });
+
+let stT=null;
+function setStatus(msg, ms){
+  const el=$('status'); clearTimeout(stT);
+  if(!msg){ el.hidden=true; return; }
+  el.textContent=msg; el.hidden=false;
+  if(ms) stT=setTimeout(()=>{ el.hidden=true; }, ms);
+}
+
+/* ---------- Detailblatt ---------- */
+const sheet=$('sheet');
+function openSheet(title, sub, html){
+  $('sTitle').textContent=title; $('sSub').textContent=sub||''; $('sBody').innerHTML=html; sheet.hidden=false;
+}
+$('sClose').onclick=()=>{ sheet.hidden=true; };
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') sheet.hidden=true; });
+
+function osmFacts(t){
+  const f=[];
+  const yn=(v,yes,no,lim)=> v==='yes'?['y',yes]: v==='no'?['n',no]: v==='limited'?['',lim||yes+' (eingeschränkt)']:null;
+  const push=x=>{ if(x) f.push(x); };
+  push(t.fee==='no'?['y','kostenlos']: t.fee==='yes'?['n','kostenpflichtig'+(t.charge?' ('+t.charge+')':'')]:null);
+  push(yn(t.wheelchair,'rollstuhlgerecht','nicht rollstuhlgerecht','teilweise rollstuhlgerecht'));
+  if(t.centralkey==='eurokey'||t['centralkey']==='yes') f.push(['','Euroschlüssel']);
+  push(yn(t.changing_table,'Wickeltisch','kein Wickeltisch'));
+  if(t.unisex==='yes') f.push(['','Unisex']);
+  if(t.opening_hours) f.push(['', t.opening_hours==='24/7'?'rund um die Uhr':'Öffnungszeiten: '+t.opening_hours]);
+  if(t.access==='customers') f.push(['n','nur für Kunden']);
+  if(t.access==='private') f.push(['n','nicht öffentlich']);
+  if(t.handwashing==='yes'||t['toilets:handwashing']==='yes') f.push(['y','Handwaschbecken']);
+  return f;
+}
+function starStr(v){ const n=Math.round(v); return '★★★★★'.slice(0,n)+'☆☆☆☆☆'.slice(0,5-n); }
+async function openPlace(id){
+  const p = places.get(id); if(!p) return;
+  const t = p.tags||{};
+  const title = p.name || t.name || (t.operator ? 'Toilette · '+t.operator : 'Öffentliche Toilette');
+  const sub = [t.operator && t.name ? t.operator : '', p.src==='user'?'von Nutzern gemeldet':'aus OpenStreetMap', `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`].filter(Boolean).join(' · ');
+  const a = agg.get(id);
+  const facts = osmFacts(t);
+  const mkTop = a ? Object.entries(a.mk).sort((x,y)=>y[1]-x[1]).slice(0,8) : [];
+  const html = `
+    ${facts.length?`<div><p class="h3">Laut Karte</p><div class="facts">${facts.map(([c,l])=>`<span class="fact ${c}">${esc(l)}</span>`).join('')}</div></div>`:''}
+    <div><p class="h3">Bewertungen ${a?`(${a.n})`:''}</p>
+      ${a?`<div class="scores">
+        <div class="score"><div class="v">${fmt1(a.s/a.n)}</div><div class="k">Sauberkeit</div></div>
+        <div class="score"><div class="v">${fmt1(a.z/a.n)}</div><div class="k">Zugänglichkeit</div></div>
+        <div class="score"><div class="v">${fmt1(a.g/a.n)}</div><div class="k">Gesamt</div></div></div>
+        ${mkTop.length?`<div class="facts" style="margin-top:8px">${mkTop.map(([m,c])=>`<span class="fact ${m==='geschlossen'||m==='kostenpflichtig'||m==='gaeste'?'n':'y'}">${esc(MK[m]||m)} · ${c}×</span>`).join('')}</div>`:''}`
+      :'<p class="small" style="margin:0">Noch keine Bewertung. Sei die erste Person.</p>'}
+    </div>
+    <div class="actions">
+      <button class="btn primary" type="button" id="goRate">Bewerten</button>
+      <a class="btn ghost" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}" target="_blank" rel="noopener">Route ↗</a>
+      ${p.src==='osm'?`<a class="btn ghost" href="https://www.openstreetmap.org/${{n:'node',w:'way',r:'relation'}[id.charAt(4)]}/${id.slice(5)}" target="_blank" rel="noopener">In OSM ↗</a>`:''}
+    </div>
+    <div><p class="h3">Kommentare</p><div id="revList" class="small">Wird geladen …</div></div>`;
+  openSheet(title, sub, html);
+  $('goRate').onclick = ()=>openRate(id, title);
+  try{
+    const list = (await store.reviews(id)).filter(r=>r.kommentar || (r.merkmale||[]).length);
+    $('revList').innerHTML = list.length ? list.map(r=>`<div class="review">
+      <div class="meta"><span class="stars-s" aria-label="Gesamt ${r.gesamt} von 5">${starStr(r.gesamt)}</span><span>${esc(r.autor||'anonym')}</span><span>${new Date(r.created_at).toLocaleDateString('de-DE')}</span></div>
+      ${r.kommentar?`<p>${esc(r.kommentar)}</p>`:''}
+      ${(r.merkmale||[]).length?`<p class="small">${r.merkmale.map(m=>esc(MK[m]||m)).join(' · ')}</p>`:''}</div>`).join('') : 'Noch keine Kommentare.';
+  }catch(e){ $('revList').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+/* ---------- Bewerten ---------- */
+function starInput(id){
+  return `<div class="stars" role="radiogroup" id="${id}" data-v="0">${[1,2,3,4,5].map(i=>`<button type="button" role="radio" aria-checked="false" aria-label="${i} von 5" data-i="${i}">★</button>`).join('')}</div>`;
+}
+function wireStars(id){
+  const g=$(id);
+  g.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    const v=+b.dataset.i; g.dataset.v=v;
+    g.querySelectorAll('button').forEach(x=>{ const on=+x.dataset.i<=v; x.classList.toggle('on',on); x.setAttribute('aria-checked', +x.dataset.i===v); });
+  }));
+}
+function openRate(id, title){
+  const html = `
+    <form id="rateForm" style="display:grid;gap:14px">
+      <div class="rate-row"><label>Sauberkeit</label>${starInput('rS')}</div>
+      <div class="rate-row"><label>Zugänglichkeit</label>${starInput('rZ')}</div>
+      <div class="rate-row"><label>Gesamt</label>${starInput('rG')}</div>
+      <p class="hint" style="margin-top:-8px">Zugänglichkeit: leicht zu finden, gut erreichbar, offen, barrierearm.</p>
+      <div><p class="h3">Besonderheiten</p><div class="checks">${MERKMALE.map(([k,l])=>`<label><input type="checkbox" value="${k}"> <span>${esc(l)}</span></label>`).join('')}</div></div>
+      <div><label class="h3" for="rK" style="display:block">Kommentar (optional)</label><textarea id="rK" maxlength="300" placeholder="z. B. sauber, aber kein Papier. Schlüssel gibt es am Kiosk."></textarea><p class="hint"><span id="rKc">0</span>/300 · Bitte keine Namen oder Beleidigungen.</p></div>
+      <div><label class="h3" for="rA" style="display:block">Spitzname (optional)</label><input class="inp" id="rA" maxlength="30" value="${esc(local.get('wc-nick',''))}"></div>
+      <div class="actions"><button class="btn primary" type="submit">Bewertung speichern</button><button class="btn ghost" type="button" id="rBack">Zurück</button></div>
+      <div id="rMsg"></div>
+    </form>`;
+  openSheet('Bewerten', title, html);
+  ['rS','rZ','rG'].forEach(wireStars);
+  $('rK').addEventListener('input',()=>{ $('rKc').textContent=$('rK').value.length; });
+  $('rBack').onclick=()=>openPlace(id);
+  $('rateForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const s=+$('rS').dataset.v, z=+$('rZ').dataset.v, g=+$('rG').dataset.v;
+    if(!s||!z||!g){ $('rMsg').innerHTML='<p class="err">Bitte alle drei Sternreihen ausfüllen.</p>'; return; }
+    const today = new Date().toISOString().slice(0,10);
+    const done = local.get('wc-done',{});
+    if(done[id]===today){ $('rMsg').innerHTML='<p class="err">Du hast diese Toilette heute schon bewertet.</p>'; return; }
+    const merkmale=[...document.querySelectorAll('#rateForm .checks input:checked')].map(x=>x.value);
+    const autor=$('rA').value.trim().slice(0,30); local.set('wc-nick',autor);
+    const btn=e.submitter; if(btn) btn.disabled=true;
+    try{
+      const row = await store.addRating({place_id:id, sauberkeit:s, zugang:z, gesamt:g, merkmale, kommentar:$('rK').value.trim().slice(0,300)||null, autor:autor||null});
+      addAgg(row); done[id]=today; local.set('wc-done',done); render();
+      openPlace(id); setStatus('Danke! Bewertung gespeichert.', 2500);
+    }catch(err){ $('rMsg').innerHTML=`<p class="err">${esc(err.message)}</p>`; if(btn) btn.disabled=false; }
+  });
+}
+
+/* ---------- Toilette melden ---------- */
+function setAddMode(on){ $('cross').hidden=!on; $('addBanner').hidden=!on; $('btnAdd').classList.toggle('on',on); if(on) sheet.hidden=true; }
+$('btnAdd').onclick=()=>setAddMode($('addBanner').hidden);
+$('addCancel').onclick=()=>setAddMode(false);
+$('addHere').onclick=()=>{
+  if(map.getZoom()<16){ setStatus('Bitte näher heranzoomen, damit der Ort genau stimmt.', 3500); return; }
+  const c=map.getCenter(); setAddMode(false);
+  openSheet('Toilette melden', `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`, `
+    <form id="addForm" style="display:grid;gap:12px">
+      <div><label class="h3" for="aN" style="display:block">Bezeichnung</label><input class="inp" id="aN" maxlength="80" required placeholder="z. B. WC am Busbahnhof, Rathaus Erdgeschoss"></div>
+      <p class="hint" style="margin:0">Nur öffentlich zugängliche Toiletten melden. Danach kannst du sie direkt bewerten.</p>
+      <div class="actions"><button class="btn primary" type="submit">Eintragen</button></div>
+      <div id="aMsg"></div>
+    </form>`);
+  $('addForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const name=$('aN').value.trim(); if(!name) return;
+    const id='u-'+(crypto.randomUUID?crypto.randomUUID().slice(0,18):Date.now().toString(36));
+    try{
+      const row = await store.addPlace({id, name, lat:+c.lat.toFixed(6), lon:+c.lng.toFixed(6)});
+      places.set(row.id, {id:row.id, lat:row.lat, lon:row.lon, name:row.name, tags:{}, src:'user'}); render();
+      openRate(row.id, row.name);
+    }catch(err){ $('aMsg').innerHTML=`<p class="err">${esc(err.message)}</p>`; }
+  });
+};
+
+/* ---------- Filter ---------- */
+$('btnFilter').onclick=()=>{
+  const seg = [[0,'alle'],[3,'ab 3 ★'],[4,'ab 4 ★']].map(([v,l])=>`<button type="button" data-v="${v}" aria-pressed="${filter.min===v}">${l}</button>`).join('');
+  openSheet('Filter', 'Welche Toiletten sollen angezeigt werden?', `
+    <div class="filter-grid">
+      <div><p class="h3">Mindestbewertung (Gesamt)</p><div class="seg" id="fMin">${seg}</div></div>
+      <div class="checks" style="grid-template-columns:1fr">
+        <label><input type="checkbox" id="fRated" ${filter.rated?'checked':''}> <span>Nur bewertete Toiletten</span></label>
+        <label><input type="checkbox" id="fRolli" ${filter.rolli?'checked':''}> <span>Rollstuhlgerecht</span></label>
+        <label><input type="checkbox" id="fFree" ${filter.free?'checked':''}> <span>Kostenlos</span></label>
+        <label><input type="checkbox" id="fWickel" ${filter.wickel?'checked':''}> <span>Mit Wickeltisch</span></label>
+      </div>
+      <p class="hint">„Rollstuhlgerecht“, „kostenlos“ und „Wickeltisch“ gelten, wenn OpenStreetMap es angibt oder mindestens die Hälfte der Bewertungen es bestätigt.</p>
+      <div class="actions"><button class="btn ghost" type="button" id="fReset">Zurücksetzen</button></div>
+    </div>`);
+  const apply=()=>{ local.set('wc-filter',filter); const n=render(); $('btnFilter').classList.toggle('on', !!(filter.min||filter.rated||filter.rolli||filter.free||filter.wickel)); setStatus(n+' Toiletten sichtbar', 1800); };
+  document.querySelectorAll('#fMin button').forEach(b=>b.onclick=()=>{ filter.min=+b.dataset.v; document.querySelectorAll('#fMin button').forEach(x=>x.setAttribute('aria-pressed', x===b)); apply(); });
+  [['fRated','rated'],['fRolli','rolli'],['fFree','free'],['fWickel','wickel']].forEach(([i,k])=>$(i).onchange=()=>{ filter[k]=$(i).checked; apply(); });
+  $('fReset').onclick=()=>{ filter={min:0,rated:false,rolli:false,free:false,wickel:false}; apply(); $('btnFilter').click(); };
+};
+
+/* ---------- Info ---------- */
+$('btnInfo').onclick=()=>openSheet('WC-Kompass', SHARED?'Bewertungen werden gemeinsam gespeichert':'Bewertungen werden nur auf diesem Gerät gespeichert', `
+  <div style="display:grid;gap:10px;font-size:14px">
+    <p style="margin:0">Die Toiletten stammen aus <b>OpenStreetMap</b>, der freien Weltkarte. Dazu kommen Toiletten, die hier gemeldet wurden. Zoome hinein (ab Stadtteil-Ebene), dann werden sie geladen.</p>
+    <p style="margin:0"><b>Farben:</b> grün ab 4 Sternen, gelb 3–3,9, rot unter 3, grau noch nicht bewertet.</p>
+    ${SHARED?'':'<p class="err" style="margin:0">Noch keine gemeinsame Datenbank eingerichtet. Deine Bewertungen sieht nur dieses Gerät. Wie du das änderst, steht in der Anleitung (LIESMICH.md).</p>'}
+    <p class="small" style="margin:0">Kartendaten © OpenStreetMap-Mitwirkende (ODbL). Kartenkacheln: openstreetmap.org. Suche: Nominatim. Toilettendaten: Overpass API.</p>
+  </div>`);
+
+/* ---------- Suche ---------- */
+let qT=null;
+$('q').addEventListener('input', ()=>{
+  clearTimeout(qT); const v=$('q').value.trim();
+  if(v.length<3){ $('results').hidden=true; return; }
+  qT=setTimeout(async ()=>{
+    try{
+      const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=de&limit=5&accept-language=de&q=${encodeURIComponent(v)}`);
+      const j=await r.json();
+      $('results').innerHTML = j.length ? j.map((x,i)=>`<button type="button" data-i="${i}">${esc(x.display_name)}</button>`).join('') : '<button type="button" disabled>Nichts gefunden</button>';
+      $('results').hidden=false;
+      $('results').querySelectorAll('button[data-i]').forEach(b=>b.onclick=()=>{ const x=j[+b.dataset.i]; map.setView([+x.lat,+x.lon], 15); $('results').hidden=true; $('q').blur(); });
+    }catch(e){ $('results').innerHTML='<button type="button" disabled>Suche gerade nicht erreichbar</button>'; $('results').hidden=false; }
+  }, 700);
+});
+document.addEventListener('click', e=>{ if(!e.target.closest('.search')) $('results').hidden=true; });
+
+/* ---------- Standort ---------- */
+let meMarker=null;
+$('btnLocate').onclick=()=>{
+  if(!navigator.geolocation){ setStatus('Standort wird von diesem Gerät nicht unterstützt.',3000); return; }
+  setStatus('Standort wird ermittelt …');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const ll=[pos.coords.latitude,pos.coords.longitude];
+    if(meMarker) meMarker.setLatLng(ll); else meMarker=L.circleMarker(ll,{radius:7,weight:3,color:'#ffffff',fillColor:css('--accent'),fillOpacity:1}).addTo(map).bindTooltip('Du bist hier');
+    map.setView(ll, 16); setStatus(null);
+  }, ()=>setStatus('Standort nicht verfügbar. Bitte Ortungsdienste erlauben.',4000), {enableHighAccuracy:true, timeout:10000});
+};
+
+/* ---------- Start ---------- */
+(async ()=>{
+  try{
+    const {places:up, ratings} = await store.loadAll();
+    up.forEach(p=>places.set(p.id,{id:p.id,lat:p.lat,lon:p.lon,name:p.name,tags:{},src:'user'}));
+    ratings.forEach(addAgg);
+  }catch(e){ setStatus('Bewertungen konnten nicht geladen werden: '+e.message, 6000); }
+  if(filter.min||filter.rated||filter.rolli||filter.free||filter.wickel) $('btnFilter').classList.add('on');
+  render(); loadOsm();
+  if(!SHARED && !local.get('wc-local-hint',false)){ setStatus('Testmodus: Bewertungen bleiben auf diesem Gerät', 4500); local.set('wc-local-hint',true); }
+})();
+})();
+</script>
+<script>
+if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }
+</script>
+</body>
+</html>
