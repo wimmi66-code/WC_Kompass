@@ -3,5 +3,5 @@
 // Trage hier die Werte aus Supabase ein: Project Settings → API (bzw. "Data API" und "API Keys").
 window.WC_KOMPASS_CONFIG = {
      supabaseUrl: 'https://xepgjcskvqdqpamwonlf.supabase.co',
-   supabaseKey: 'HIER_DEINEN_SCHLÜSSEL_EINFÜGEN'
+      supabaseKey: 'sb_publishable_AbC123...'
 };
